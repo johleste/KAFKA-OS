@@ -51,17 +51,42 @@ def cmd_df(session, args, bure):
 
 
 def cmd_free(session, args, bure):
-    hw = session.profile.get("hardware", {})
-    ram = hw.get("ram_gb", 16) * 1024  # MB
-    used = int(ram * random.uniform(0.4, 0.75))
-    free = ram - used
-    shared = random.randint(50, 300)
-    cache = random.randint(500, 2000)
-    available = free + cache
+    meminfo = session.vfs.read("/proc/meminfo")
+    if meminfo:
+        vals = {}
+        for line in meminfo.splitlines():
+            if ":" in line:
+                key, val = line.split(":", 1)
+                try:
+                    vals[key.strip()] = int(val.strip().split()[0])
+                except (ValueError, IndexError):
+                    pass
+        total = vals.get("MemTotal", 16 * 1024 * 1024) // 1024
+        free = vals.get("MemFree", total // 2) // 1024
+        avail = vals.get("MemAvailable", free) // 1024
+        cached = vals.get("Cached", 0) // 1024
+        buffers = vals.get("Buffers", 0) // 1024
+        used = total - free - cached - buffers
+        shared = random.randint(50, 300)
+        swap_total = vals.get("SwapTotal", total // 2) // 1024
+        swap_free = vals.get("SwapFree", swap_total) // 1024
+    else:
+        hw = session.profile.get("hardware", {})
+        total = hw.get("ram_gb", 16) * 1024
+        used = int(total * random.uniform(0.4, 0.75))
+        free = total - used
+        shared = random.randint(50, 300)
+        cached = random.randint(500, 2000)
+        avail = free + cached
+        swap_total = total // 2
+        swap_free = swap_total
+    suffix = ""
+    if "-h" in args:
+        suffix = " (human readable not implemented)"
     session.write(
         f"               total        used        free      shared  buff/cache   available\n"
-        f"Mem:        {ram:>9}    {used:>9}    {free:>9}    {shared:>9}    {cache:>9}    {available:>9}\n"
-        f"Swap:       {ram//2:>9}           0    {ram//2:>9}\n"
+        f"Mem:        {total:>9}    {used:>9}    {free:>9}    {shared:>9}    {cached:>9}    {avail:>9}\n"
+        f"Swap:       {swap_total:>9}           0    {swap_free:>9}\n"
     )
 
 

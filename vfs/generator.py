@@ -159,6 +159,9 @@ def build_vfs(profile: dict) -> VFS:
                        "PubkeyAuthentication yes\nX11Forwarding no\n",
                mode=0o644)
 
+    # /proc virtual files
+    _add_proc_files(vfs, profile)
+
     # /var/log
     vfs.mkfile("/var/log/auth.log", content=_auth_log(hostname, users),
                owner="root", group="adm", mode=0o640)
@@ -194,6 +197,112 @@ def build_vfs(profile: dict) -> VFS:
     _add_profile_files(vfs, profile, users)
 
     return vfs
+
+
+def _add_proc_files(vfs, profile):
+    identity = profile.get("identity", {})
+    hw = profile.get("hardware", {})
+    net = profile.get("network", {})
+    procs = profile.get("processes", [])
+
+    cores = hw.get("cpu_cores", 4)
+    threads = hw.get("cpu_threads", cores * 2)
+    ram_kb = hw.get("ram_gb", 8) * 1024 * 1024
+    free_kb = int(ram_kb * random.uniform(0.25, 0.55))
+
+    # /proc/cpuinfo
+    cpu_entries = []
+    model = hw.get("cpu_model", "Intel(R) CPU")
+    for i in range(threads):
+        cpu_entries.append(
+            f"processor\t: {i}\n"
+            f"vendor_id\t: GenuineIntel\n"
+            f"cpu family\t: 6\n"
+            f"model\t\t: 165\n"
+            f"model name\t: {model}\n"
+            f"stepping\t: 5\n"
+            f"cpu MHz\t\t: {random.uniform(800, 3500):.3f}\n"
+            f"cache size\t: 16384 KB\n"
+            f"physical id\t: 0\n"
+            f"siblings\t: {threads}\n"
+            f"core id\t\t: {i % cores}\n"
+            f"cpu cores\t: {cores}\n"
+            f"flags\t\t: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov\n"
+            f"bogomips\t: {random.uniform(4000,8000):.2f}\n"
+            f"clflush size\t: 64\n"
+            f"cache_alignment\t: 64\n\n"
+        )
+    vfs.mkfile("/proc/cpuinfo", content="".join(cpu_entries), mode=0o444)
+
+    # /proc/meminfo
+    cached_kb = int(ram_kb * random.uniform(0.1, 0.25))
+    buffers_kb = int(ram_kb * random.uniform(0.02, 0.08))
+    swap_kb = (hw.get("ram_gb", 8) // 2) * 1024 * 1024
+    vfs.mkfile("/proc/meminfo", content=(
+        f"MemTotal:       {ram_kb:>10} kB\n"
+        f"MemFree:        {free_kb:>10} kB\n"
+        f"MemAvailable:   {free_kb + cached_kb:>10} kB\n"
+        f"Buffers:        {buffers_kb:>10} kB\n"
+        f"Cached:         {cached_kb:>10} kB\n"
+        f"SwapCached:              0 kB\n"
+        f"Active:         {int(ram_kb * 0.4):>10} kB\n"
+        f"Inactive:       {int(ram_kb * 0.2):>10} kB\n"
+        f"SwapTotal:      {swap_kb:>10} kB\n"
+        f"SwapFree:       {swap_kb:>10} kB\n"
+        f"Dirty:                  96 kB\n"
+        f"Writeback:               0 kB\n"
+        f"HugePages_Total:         0\n"
+        f"HugePages_Free:          0\n"
+        f"HugePages_Rsvd:          0\n"
+        f"HugePages_Surp:          0\n"
+    ), mode=0o444)
+
+    # /proc/version
+    kernel = identity.get("kernel", "5.15.0-91-generic")
+    vfs.mkfile("/proc/version",
+               content=f"Linux version {kernel.split()[0]} (buildd@ubuntu) "
+                       f"(gcc version 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04)) {kernel}\n",
+               mode=0o444)
+
+    # /proc/mounts
+    vfs.mkfile("/proc/mounts", content=(
+        "sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0\n"
+        "proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0\n"
+        "udev /dev devtmpfs rw,nosuid,relatime 0 0\n"
+        "/dev/sda2 / ext4 rw,relatime 0 0\n"
+        "/dev/sda1 /boot/efi vfat rw,relatime 0 0\n"
+        "tmpfs /run/user/1000 tmpfs rw,nosuid,nodev,relatime 0 0\n"
+    ), mode=0o444)
+
+    # /proc/uptime
+    uptime_range = identity.get("uptime_days_range", [1, 30])
+    uptime_secs = random.randint(uptime_range[0], uptime_range[1]) * 86400 + random.randint(0, 86400)
+    idle_secs = uptime_secs * threads * random.uniform(0.6, 0.95)
+    vfs.mkfile("/proc/uptime", content=f"{uptime_secs}.{random.randint(0,99):02d} "
+               f"{idle_secs:.2f}\n", mode=0o444)
+
+    # /proc/<pid> stubs for each fake process
+    vfs.makedirs("/proc", mode=0o555)
+    for proc in procs:
+        pid = proc.get("pid", 1)
+        vfs.makedirs(f"/proc/{pid}", mode=0o555)
+        vfs.mkfile(f"/proc/{pid}/cmdline",
+                   content=proc.get("cmd", proc.get("name", "unknown")).replace(" ", "\x00") + "\x00",
+                   mode=0o444)
+        vfs.mkfile(f"/proc/{pid}/status",
+                   content=f"Name:\t{proc.get('name','unknown')}\nPid:\t{pid}\n"
+                           f"PPid:\t1\nUid:\t0\t0\t0\t0\nGid:\t0\t0\t0\t0\n",
+                   mode=0o444)
+
+    # /sys/class/net
+    iface = net.get("primary_iface", "eth0")
+    vfs.makedirs(f"/sys/class/net/{iface}", mode=0o555)
+    vfs.mkfile(f"/sys/class/net/{iface}/address",
+               content=net.get("mac", "00:00:00:00:00:00") + "\n", mode=0o444)
+    vfs.mkfile(f"/sys/class/net/{iface}/operstate", content="up\n", mode=0o444)
+    vfs.makedirs("/sys/class/net/lo", mode=0o555)
+    vfs.mkfile("/sys/class/net/lo/address", content="00:00:00:00:00:00\n", mode=0o444)
+    vfs.mkfile("/sys/class/net/lo/operstate", content="unknown\n", mode=0o444)
 
 
 def _add_profile_files(vfs, profile, users):

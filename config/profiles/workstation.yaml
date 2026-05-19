@@ -12,8 +12,48 @@ identity:
 hardware:
   cpu_model: "Intel(R) Core(TM) i7-10700 CPU @ 2.90GHz"
   cpu_cores: 8
+  cpu_threads: 16
+  cpu_sockets: 1
   ram_gb: 16
   disk_gb: 512
+  bios_vendor: "Dell Inc."
+  bios_version: "1.12.1"
+  bios_date: "03/18/2021"
+  product_name: "OptiPlex 7080"
+  serial_number: "DXKF4P3"
+  drives:
+    - dev: sda
+      model: "Samsung SSD 870 EVO 512GB"
+      size_gb: 512
+      rpm: 0
+      partitions:
+        - num: 1
+          size_gb: 1
+          fs: vfat
+          mount: /boot/efi
+        - num: 2
+          size_gb: 511
+          fs: ext4
+          mount: /
+  pci_devices:
+    - "00:00.0 Host bridge: Intel Corporation Comet Lake-S 6c Host Bridge/DRAM Controller"
+    - "00:02.0 VGA compatible controller: Intel Corporation CometLake-S GT2 [UHD Graphics 630]"
+    - "00:14.0 USB controller: Intel Corporation Comet Lake PCH-V USB Controller"
+    - "00:1f.2 Memory controller: Intel Corporation Comet Lake PCH-V cAVS"
+    - "02:00.0 Ethernet controller: Realtek Semiconductor RTL8111/8168/8411 PCI Express Gigabit Ethernet"
+  usb_devices:
+    - "Bus 001 Device 002: ID 046d:c52b Logitech, Inc. Unifying Receiver"
+    - "Bus 001 Device 003: ID 0451:8142 Texas Instruments, Inc. TUSB8041 4-Port Hub"
+    - "Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub"
+  installed_packages:
+    - {name: docker-ce, version: "24.0.7"}
+    - {name: git, version: "2.34.1"}
+    - {name: python3, version: "3.10.12"}
+    - {name: python3-pip, version: "22.0.2"}
+    - {name: curl, version: "7.81.0"}
+    - {name: vim, version: "8.2.3995"}
+    - {name: openssh-server, version: "8.9p1"}
+    - {name: build-essential, version: "12.9ubuntu3"}
 
 network:
   primary_iface: ens3

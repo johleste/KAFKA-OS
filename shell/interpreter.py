@@ -2,7 +2,7 @@ import os
 import shlex
 
 from shell.bureaucracy.engine import BureaucracyEngine
-from shell.commands import filesystem, system, auth, network, execution, editors
+from shell.commands import filesystem, system, auth, network, execution, editors, hardware, packages
 
 
 class Session:
@@ -26,6 +26,10 @@ class Session:
         self.cwd = self.home
         self.history = []
         self._nested_host = None
+
+        # Package/service state — persists within the session
+        self.installed_packages = {}   # name -> {version, bin_path}
+        self.services = {}             # name -> "active"|"inactive"|"enabled"
 
     def write(self, text, end=""):
         self._write(text)
@@ -122,6 +126,33 @@ COMMANDS = {
     "vim":      editors.cmd_vim,
     "vi":       editors.cmd_vi,
     "nano":     editors.cmd_nano,
+    # Hardware
+    "lscpu":       hardware.cmd_lscpu,
+    "lshw":        hardware.cmd_lshw,
+    "lspci":       hardware.cmd_lspci,
+    "lsusb":       hardware.cmd_lsusb,
+    "lsblk":       hardware.cmd_lsblk,
+    "fdisk":       hardware.cmd_fdisk,
+    "dmidecode":   hardware.cmd_dmidecode,
+    "smartctl":    hardware.cmd_smartctl,
+    "hdparm":      hardware.cmd_hdparm,
+    "mount":       hardware.cmd_mount,
+    "du":          hardware.cmd_du,
+    "dmesg":       hardware.cmd_dmesg,
+    # Packages
+    "pip":         packages.cmd_pip,
+    "pip3":        packages.cmd_pip,
+    "npm":         packages.cmd_npm,
+    "yarn":        packages.cmd_yarn,
+    "cargo":       packages.cmd_cargo,
+    "gem":         packages.cmd_gem,
+    "snap":        packages.cmd_snap,
+    "dpkg":        packages.cmd_dpkg,
+    "which":       packages.cmd_which,
+    "whereis":     packages.cmd_whereis,
+    "systemctl":   packages.cmd_systemctl,
+    "service":     packages.cmd_service,
+    "man":         packages.cmd_man,
 }
 
 

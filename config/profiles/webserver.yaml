@@ -12,8 +12,52 @@ identity:
 hardware:
   cpu_model: "Intel(R) Xeon(R) Silver 4214R CPU @ 2.40GHz"
   cpu_cores: 24
+  cpu_threads: 48
+  cpu_sockets: 2
   ram_gb: 32
   disk_gb: 1024
+  bios_vendor: "American Megatrends Inc."
+  bios_version: "3.4"
+  bios_date: "09/14/2022"
+  product_name: "PowerEdge R640"
+  serial_number: "7XKBP73"
+  drives:
+    - dev: sda
+      model: "PERC H730P Mini"
+      size_gb: 1024
+      rpm: 10000
+      partitions:
+        - num: 1
+          size_gb: 1
+          fs: vfat
+          mount: /boot/efi
+        - num: 2
+          size_gb: 1023
+          fs: ext4
+          mount: /
+    - dev: sdb
+      model: "PERC H730P Mini"
+      size_gb: 1024
+      rpm: 10000
+      partitions: []
+  pci_devices:
+    - "00:00.0 Host bridge: Intel Corporation Sky Lake-E DMI3 Registers"
+    - "00:04.0 System peripheral: Intel Corporation Sky Lake-E CBDMA Registers"
+    - "00:16.0 Communication controller: Intel Corporation Sky Lake-E MEI Controller"
+    - "02:00.0 Ethernet controller: Intel Corporation Ethernet Controller 10G X550T"
+    - "18:00.0 RAID bus controller: Broadcom / LSI MegaRAID SAS-3 3108"
+  usb_devices:
+    - "Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub"
+    - "Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub"
+  installed_packages:
+    - {name: nginx, version: "1.18.0"}
+    - {name: php8.1-fpm, version: "8.1.2"}
+    - {name: mysql-client, version: "8.0.36"}
+    - {name: git, version: "2.25.1"}
+    - {name: curl, version: "7.68.0"}
+    - {name: vim, version: "8.1.2269"}
+    - {name: openssh-server, version: "8.2p1"}
+    - {name: certbot, version: "1.21.0"}
 
 network:
   primary_iface: eth0
