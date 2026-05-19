@@ -8,7 +8,8 @@ import paramiko
 from shell.interpreter import Session, run_shell, COMMANDS
 from shell.bureaucracy.engine import BureaucracyEngine
 from op_shell.shell import launch_operator_shell
-from logging.session import SessionLogger
+from session_log.session import SessionLogger
+from vfs.generator import build_vfs
 
 log = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class KafkaSSHServer(paramiko.ServerInterface):
     def __init__(self, profile, config, operator_keys):
         self.profile = profile
         self.config = config
-        self.operator_keys = operator_keys  # list of paramiko.PKey
+        self.operator_keys = operator_keys
         self.authenticated_user = None
         self.is_operator = False
         self._event = threading.Event()
@@ -36,7 +37,6 @@ class KafkaSSHServer(paramiko.ServerInterface):
             log.info(f"Operator console access via magic string: {username}")
             return paramiko.AUTH_SUCCESSFUL
 
-        # Every password attempt succeeds for the tarpit
         self.authenticated_user = username
         self.is_operator = False
         log.info(f"Tarpit auth: {username} from password")
@@ -49,7 +49,6 @@ class KafkaSSHServer(paramiko.ServerInterface):
                 self.is_operator = True
                 log.info(f"Operator key auth: {username}")
                 return paramiko.AUTH_SUCCESSFUL
-        # Unknown key — drop into tarpit
         self.authenticated_user = username
         self.is_operator = False
         return paramiko.AUTH_SUCCESSFUL
@@ -58,8 +57,8 @@ class KafkaSSHServer(paramiko.ServerInterface):
         self._event.set()
         return True
 
-    def check_channel_pty_request(self, channel, term, width, height, pixelwidth,
-                                   pixelheight, modes):
+    def check_channel_pty_request(self, channel, term, width, height,
+                                   pixelwidth, pixelheight, modes):
         return True
 
     def get_allowed_auths(self, username):
@@ -94,11 +93,11 @@ def _load_operator_keys(config):
     return keys
 
 
-def handle_client(client_sock, addr, host_key, profile, config, vfs, session_logger):
+def handle_client(client_sock, addr, host_key, profile, config, vfs, session_logger,
+                  cluster_registry=None, instance_id=None, on_session_end=None):
     transport = paramiko.Transport(client_sock)
     transport.add_server_key(host_key)
 
-    # Set SSH banner to match profile
     banner = config.get("endpoints", {}).get("ssh", {}).get(
         "banner", "OpenSSH_8.9p1 Ubuntu-3ubuntu0.6")
     transport.local_version = f"SSH-2.0-{banner.split(',')[0]}"
@@ -127,9 +126,16 @@ def handle_client(client_sock, addr, host_key, profile, config, vfs, session_log
             real_shell = config.get("operator", {}).get("real_shell", "/bin/bash")
             launch_operator_shell(channel, real_shell)
         else:
-            _run_tarpit(channel, username, remote_ip, profile, config, vfs, session_logger)
+            _run_tarpit(channel, username, remote_ip, profile, config, vfs,
+                        session_logger, cluster_registry=cluster_registry,
+                        instance_id=instance_id)
     finally:
         session_logger.end_session(username)
+        if on_session_end:
+            try:
+                on_session_end()
+            except Exception:
+                pass
         try:
             channel.close()
         except Exception:
@@ -137,7 +143,8 @@ def handle_client(client_sock, addr, host_key, profile, config, vfs, session_log
         transport.close()
 
 
-def _run_tarpit(channel, username, remote_ip, profile, config, vfs, session_logger):
+def _run_tarpit(channel, username, remote_ip, profile, config, vfs, session_logger,
+                cluster_registry=None, instance_id=None):
     def write(text):
         try:
             channel.sendall(text.replace("\n", "\r\n"))
@@ -207,6 +214,8 @@ def _run_tarpit(channel, username, remote_ip, profile, config, vfs, session_logg
         prompt_func=prompt,
         prompt_secret_func=prompt_secret,
         remote_ip=remote_ip,
+        cluster_registry=cluster_registry,
+        instance_id=instance_id,
     )
 
     try:
@@ -215,9 +224,19 @@ def _run_tarpit(channel, username, remote_ip, profile, config, vfs, session_logg
         pass
 
 
-def start_ssh_server(profile, config, vfs, host_key_path, session_logger):
-    endpoint_cfg = config.get("endpoints", {}).get("ssh", {})
-    port = endpoint_cfg.get("port", 22)
+def start_ssh_server(profile, config, host_key_path, session_logger,
+                     port=None, cluster_registry=None, instance_id=None,
+                     profile_factory=None,
+                     # legacy positional compat: old callers passed vfs as 3rd arg
+                     vfs=None):
+    """Start the SSH accept loop.
+
+    port overrides config endpoint port.
+    profile_factory() is called after each session ends to regenerate identity
+    (used by new_machine_on_disconnect). VFS is always built fresh per connection.
+    """
+    if port is None:
+        port = config.get("endpoints", {}).get("ssh", {}).get("port", 22)
 
     if not os.path.exists(host_key_path):
         log.info(f"Generating host key at {host_key_path}")
@@ -230,17 +249,41 @@ def start_ssh_server(profile, config, vfs, host_key_path, session_logger):
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("0.0.0.0", port))
     sock.listen(20)
-    log.info(f"SSH tarpit listening on port {port}")
+    log.info(f"SSH tarpit listening on :{port}")
+
+    current_profile = [profile]
+    profile_lock = threading.Lock()
 
     while True:
         try:
             client, addr = sock.accept()
-            log.info(f"Connection from {addr[0]}:{addr[1]}")
-            t = threading.Thread(
-                target=handle_client,
-                args=(client, addr, key, profile, config, vfs, session_logger),
-                daemon=True,
-            )
-            t.start()
         except Exception as e:
             log.error(f"Accept error: {e}")
+            continue
+
+        log.info(f"Connection from {addr[0]}:{addr[1]}")
+
+        with profile_lock:
+            p = current_profile[0]
+
+        # Always build a fresh VFS per connection — eliminates shared mutable state
+        # and ensures each attacker starts clean.
+        session_vfs = build_vfs(p)
+
+        def on_done(p_ref=p):
+            if profile_factory:
+                with profile_lock:
+                    new_p = profile_factory()
+                    current_profile[0] = new_p
+
+        t = threading.Thread(
+            target=handle_client,
+            args=(client, addr, key, p, config, session_vfs, session_logger),
+            kwargs={
+                "cluster_registry": cluster_registry,
+                "instance_id": instance_id,
+                "on_session_end": on_done,
+            },
+            daemon=True,
+        )
+        t.start()

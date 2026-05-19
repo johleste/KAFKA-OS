@@ -1,5 +1,17 @@
 profile: workstation
 
+cluster:
+  enabled: false
+  instances: 3              # number of concurrent fake machines
+  port_start: 2222          # first instance on 2222, next on 2223, etc.
+  base_ip: "10.0.0"        # fake internal subnet prefix
+  ip_start: 11             # 10.0.0.11, 10.0.0.12, 10.0.0.13 ...
+  profiles:                 # rotate through these profiles across instances
+    - workstation
+    - webserver
+  respawn: true             # auto-restart instance if server loop errors
+  new_machine_on_disconnect: false  # regenerate hostname/identity after each session
+
 bureaucracy:
   friction_level: 3              # 1=believable lag  5=pure hell
   base_msg_delay_ms: 200

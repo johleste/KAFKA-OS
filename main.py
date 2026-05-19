@@ -3,12 +3,13 @@ import argparse
 import logging
 import os
 import sys
+import threading
 
 import yaml
 
 from vfs.generator import build_vfs
 from endpoints.ssh import start_ssh_server
-from logging.session import SessionLogger
+from session_log.session import SessionLogger
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,33 +35,44 @@ def load_profile(config: dict, profiles_dir="config/profiles"):
 
 def main():
     parser = argparse.ArgumentParser(description="KAFKA-OS Tarpit")
-    parser.add_argument("--config", default="config/default.yaml",
-                        help="Path to config file")
-    parser.add_argument("--host-key", default="kafka_host_rsa",
-                        help="Path to SSH host key (generated if absent)")
+    parser.add_argument("--config", default="config/default.yaml")
+    parser.add_argument("--host-key", default="kafka_host_rsa")
     parser.add_argument("--profile", help="Override profile from config")
+    parser.add_argument("--cluster", action="store_true",
+                        help="Force cluster mode regardless of config")
     args = parser.parse_args()
 
     config = load_config(args.config)
     if args.profile:
         config["profile"] = args.profile
+    if args.cluster:
+        config.setdefault("cluster", {})["enabled"] = True
 
+    cluster_cfg = config.get("cluster", {})
+    use_cluster = cluster_cfg.get("enabled", False)
+
+    if use_cluster:
+        from cluster.manager import ClusterManager
+        log.info("Starting in cluster mode.")
+        mgr = ClusterManager(config, host_key_base=args.host_key)
+        mgr.start()
+        return
+
+    # Single-instance mode
     profile = load_profile(config)
-    log.info(f"Loaded profile: {profile.get('identity',{}).get('hostname','unknown')}")
+    log.info(f"Profile: {profile.get('identity',{}).get('hostname','unknown')}")
 
     vfs = build_vfs(profile)
     log.info("Virtual filesystem built.")
 
     session_logger = SessionLogger(config)
-    log.info("Session logger ready.")
 
     threads = []
 
     if config.get("endpoints", {}).get("ssh", {}).get("enabled", True):
-        import threading
         t = threading.Thread(
             target=start_ssh_server,
-            args=(profile, config, vfs, args.host_key, session_logger),
+            args=(profile, config, args.host_key, session_logger),
             daemon=True,
         )
         t.start()

@@ -9,7 +9,8 @@ class Session:
     """Holds per-connection state."""
 
     def __init__(self, username, profile, vfs, config, write_func, prompt_func,
-                 prompt_secret_func, remote_ip="unknown"):
+                 prompt_secret_func, remote_ip="unknown",
+                 cluster_registry=None, instance_id=None):
         self.username = username
         self.profile = profile
         self.vfs = vfs
@@ -18,6 +19,8 @@ class Session:
         self._prompt = prompt_func
         self._prompt_secret = prompt_secret_func
         self.remote_ip = remote_ip
+        self.cluster_registry = cluster_registry
+        self.instance_id = instance_id
 
         # Set home dir from profile
         users = profile.get("users", [])
@@ -194,9 +197,8 @@ def boot_banner(session, bure):
 # Main shell loop
 # ---------------------------------------------------------------------------
 
-def run_shell(session: Session, bure: BureaucracyEngine):
-    boot_banner(session, bure)
-
+def _shell_loop(session: Session, bure: BureaucracyEngine):
+    """Inner command dispatch loop — no banner. Call run_shell() for a full session."""
     while True:
         try:
             prompt = session._build_prompt()
@@ -218,12 +220,8 @@ def run_shell(session: Session, bure: BureaucracyEngine):
             continue
 
         # Pipe/redirect — pretend to process, apply friction
-        has_pipe = "|" in raw
-        has_redirect = ">" in raw or "<" in raw
-        if has_pipe or has_redirect:
-            # Strip pipe/redirect, run only the first command
-            cmd_part = raw.split("|")[0].split(">")[0].split("<")[0].strip()
-            raw = cmd_part
+        if "|" in raw or ">" in raw or "<" in raw:
+            raw = raw.split("|")[0].split(">")[0].split("<")[0].strip()
 
         # Parse
         try:
@@ -238,7 +236,6 @@ def run_shell(session: Session, bure: BureaucracyEngine):
         cmd_name = parts[0]
         args = parts[1:]
 
-        # Log command for intelligence
         bure.log(f"CMD: {raw[:80]}", level="DEBUG")
 
         handler = COMMANDS.get(cmd_name)
@@ -251,7 +248,11 @@ def run_shell(session: Session, bure: BureaucracyEngine):
                 session.write(f"bash: {cmd_name}: unexpected error\n")
                 bure.log(f"Internal error in '{cmd_name}': {e}", level="DEBUG")
         elif attacker_tools.handle_execution(session, bure, cmd_name, args):
-            pass  # tool handled
+            pass
         else:
-            # Unknown command — bureaucratic rejection
             bure.circular_rejection(session, cmd_name)
+
+
+def run_shell(session: Session, bure: BureaucracyEngine):
+    boot_banner(session, bure)
+    _shell_loop(session, bure)

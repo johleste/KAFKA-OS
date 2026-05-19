@@ -2,6 +2,7 @@ import random
 import time
 
 from shell.commands import attacker_tools
+from vfs.generator import build_vfs
 
 
 def cmd_ping(session, args, bure):
@@ -45,13 +46,21 @@ def cmd_ssh(session, args, bure):
     else:
         remote_user, remote_host = session.username, target
 
-    topology = session.profile.get("filesystem", {}).get("network_topology", [])
-    known = next((h for h in topology
-                  if h.get("host") == remote_host or h.get("hostname") == remote_host), None)
-
     bure.log(f"NASL: Outbound SSH connection to '{remote_host}' as '{remote_user}' requested.")
     bure.simulated_check("SSH Egress Authorization Check", "base_check_medium_ms")
     bure.forward('NETWORK', f"ssh:{remote_user}@{remote_host}", "Outbound SSH Attempt")
+
+    # --- Cluster sibling routing ---
+    if session.cluster_registry:
+        sibling = session.cluster_registry.get_by_ip(remote_host)
+        if sibling:
+            _ssh_to_sibling(session, bure, remote_user, remote_host, sibling)
+            return
+
+    # --- Local topology ---
+    topology = session.profile.get("filesystem", {}).get("network_topology", [])
+    known = next((h for h in topology
+                  if h.get("host") == remote_host or h.get("hostname") == remote_host), None)
 
     session.write(f"ssh: connect to host {remote_host} port 22: ")
     time.sleep(random.uniform(2, 4))
@@ -59,18 +68,81 @@ def cmd_ssh(session, args, bure):
     if known:
         session.write(f"Connection established.\r\n")
         bure.log(f"NASL: SSH tunnel to {remote_host} active. Session nested.", level="INFO")
-        # Nested tarpit — same experience, different hostname
-        bure.log(f"Applying remote session policy for {remote_host}...", level="INFO")
         bure.simulated_check("Remote Session Policy Application", "base_check_medium_ms")
-        identity = session.profile.get("identity", {})
         session.write(f"Welcome to {known.get('hostname', remote_host)}.\r\n")
         session.write(f"Last login: {_fake_last_login()} from {session.remote_ip}\r\n\r\n")
-        # Drop back — session continues with same bureaucracy, just logged as nested
         session._nested_host = known.get("hostname", remote_host)
     else:
         session.write(f"Connection timed out\n")
         bure.log(f"NASL: Connection to '{remote_host}' failed — host not in approved "
                  f"egress list. Routing blocked.", level="ERROR")
+
+
+def _ssh_to_sibling(session, bure, remote_user, remote_host, sibling):
+    """Swap the live session into a sibling instance's profile/VFS."""
+    from shell.interpreter import _shell_loop
+    from shell.bureaucracy.engine import BureaucracyEngine
+
+    sibling_profile = sibling["profile"]
+    sibling_hostname = sibling["hostname"]
+
+    session.write(f"ssh: connect to host {remote_host} port 22: ")
+    time.sleep(random.uniform(0.3, 0.8))
+    session.write(f"Connection established.\r\n")
+
+    os_ver = sibling_profile.get("identity", {}).get("os_version", "")
+    os_name = sibling_profile.get("identity", {}).get("os_name", "Ubuntu")
+    session.write(
+        f"Welcome to {os_name} {os_ver}\r\n"
+        f"Last login: {_fake_last_login()} from {session.remote_ip}\r\n\r\n"
+    )
+
+    bure.log(f"NASL: SSH to cluster sibling {sibling_hostname} ({remote_host}).",
+             level="INFO")
+
+    # Save current session state
+    saved = {
+        "profile": session.profile,
+        "vfs": session.vfs,
+        "cwd": session.cwd,
+        "home": session.home,
+        "nested_host": session._nested_host,
+        "installed_packages": session.installed_packages,
+        "services": session.services,
+        "downloaded_tools": session.downloaded_tools,
+    }
+
+    # Swap into sibling context with a fresh VFS
+    session.profile = sibling_profile
+    session.vfs = build_vfs(sibling_profile)
+    session._nested_host = sibling_hostname
+    session.installed_packages = {}
+    session.services = {}
+    session.downloaded_tools = {}
+
+    sibling_users = sibling_profile.get("users", [])
+    sibling_user = next((u for u in sibling_users
+                         if u["username"] == remote_user), None)
+    session.home = sibling_user["home"] if sibling_user else f"/home/{remote_user}"
+    session.cwd = session.home
+
+    sub_bure = BureaucracyEngine(session.config, output_func=session._write)
+
+    try:
+        _shell_loop(session, sub_bure)
+    except (EOFError, SystemExit, OSError):
+        pass
+    finally:
+        session.write(f"Connection to {remote_host} closed.\r\n")
+        # Restore original context
+        session.profile = saved["profile"]
+        session.vfs = saved["vfs"]
+        session.cwd = saved["cwd"]
+        session.home = saved["home"]
+        session._nested_host = saved["nested_host"]
+        session.installed_packages = saved["installed_packages"]
+        session.services = saved["services"]
+        session.downloaded_tools = saved["downloaded_tools"]
 
 
 def _fake_last_login():

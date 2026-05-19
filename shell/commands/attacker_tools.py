@@ -358,13 +358,10 @@ def _output_pspy(session, bure, args):
     session.write("\n^C\n")
 
 
-def _output_nmap(session, bure, args):
-    target = next((a for a in args if not a.startswith("-")), session.profile.get("network", {}).get("ip", "10.0.0.1"))
-    net = session.profile.get("network", {})
-    procs = session.profile.get("processes", [])
-
+def _ports_from_profile(profile):
+    """Derive open TCP ports from a profile's process list."""
     open_ports = []
-    for p in procs:
+    for p in profile.get("processes", []):
         name = p.get("name", "")
         if "sshd" in name or "ssh" in name:
             open_ports.append((22, "ssh", "OpenSSH 8.9p1"))
@@ -377,26 +374,85 @@ def _output_nmap(session, bure, args):
             open_ports.append((3306, "mysql", "MySQL 8.0.35"))
         elif "docker" in name:
             open_ports.append((2375, "docker", "Docker"))
-
     if not open_ports:
         open_ports = [(22, "ssh", "OpenSSH 8.9p1")]
+    return sorted(set(open_ports))
+
+
+def _nmap_host_block(session, ip, hostname, ports, show_port_header=True):
+    session.write(
+        f"Nmap scan report for {hostname} ({ip})\n"
+        f"Host is up ({random.uniform(0.001, 0.05):.4f}s latency).\n"
+    )
+    if show_port_header:
+        session.write(f"Not shown: {1000 - len(ports)} closed ports\n")
+    session.write(f"{'PORT':<12} {'STATE':<8} {'SERVICE':<15} VERSION\n")
+    for port, svc, ver in ports:
+        session.write(f"{str(port)+'/tcp':<12} {'open':<8} {svc:<15} {ver}\n")
+        time.sleep(0.05)
+    session.write("\n")
+
+
+def _output_nmap(session, bure, args):
+    target = next((a for a in args if not a.startswith("-")),
+                  session.profile.get("network", {}).get("ip", "10.0.0.1"))
+    registry = getattr(session, "cluster_registry", None)
+    is_subnet = "/" in target or target.endswith(".*")
 
     session.write(
         f"Starting Nmap 7.80 ( https://nmap.org ) at "
         f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} UTC\n"
-        f"Nmap scan report for {target}\n"
-        f"Host is up ({random.uniform(0.001, 0.05):.4f}s latency).\n"
     )
-    if "-p" not in " ".join(args):
-        session.write(f"Not shown: {1000 - len(open_ports)} closed ports\n")
-    session.write(f"{'PORT':<12} {'STATE':<8} {'SERVICE':<15} VERSION\n")
-    for port, svc, ver in sorted(set(open_ports)):
-        session.write(f"{str(port)+'/tcp':<12} {'open':<8} {svc:<15} {ver}\n")
-        time.sleep(0.1)
-    session.write(
-        f"\nNmap done: 1 IP address (1 host up) scanned in "
-        f"{random.uniform(1, 5):.2f} seconds\n"
-    )
+
+    if registry and is_subnet:
+        # Subnet scan — show all cluster members
+        all_instances = registry.get_all()
+        hosts_shown = 0
+
+        # Always include self
+        self_ip = session.profile.get("network", {}).get("ip", "10.0.0.1")
+        self_hostname = session.profile.get("identity", {}).get("hostname", "host")
+        self_ports = _ports_from_profile(session.profile)
+        time.sleep(random.uniform(0.5, 1.5))
+        _nmap_host_block(session, self_ip, self_hostname, self_ports)
+        hosts_shown += 1
+
+        for inst in all_instances.values():
+            if inst["ip"] == self_ip:
+                continue
+            sibling_ports = _ports_from_profile(inst["profile"])
+            time.sleep(random.uniform(0.3, 1.0))
+            _nmap_host_block(session, inst["ip"], inst["hostname"], sibling_ports)
+            hosts_shown += 1
+
+        elapsed = random.uniform(8, 25)
+        session.write(
+            f"Nmap done: 256 IP addresses ({hosts_shown} hosts up) scanned in "
+            f"{elapsed:.2f} seconds\n"
+        )
+
+    elif registry and registry.get_by_ip(target):
+        # Single sibling IP
+        sibling = registry.get_by_ip(target)
+        ports = _ports_from_profile(sibling["profile"])
+        time.sleep(random.uniform(0.5, 1.5))
+        _nmap_host_block(session, target, sibling["hostname"], ports)
+        session.write(
+            f"Nmap done: 1 IP address (1 host up) scanned in "
+            f"{random.uniform(1, 4):.2f} seconds\n"
+        )
+
+    else:
+        # Single host — local machine or unknown
+        ports = _ports_from_profile(session.profile)
+        time.sleep(random.uniform(0.5, 2.0))
+        hostname = session.profile.get("identity", {}).get("hostname", target)
+        _nmap_host_block(session, target, hostname, ports,
+                         show_port_header="-p" not in " ".join(args))
+        session.write(
+            f"Nmap done: 1 IP address (1 host up) scanned in "
+            f"{random.uniform(1, 5):.2f} seconds\n"
+        )
 
 
 def _output_nikto(session, bure, args):
