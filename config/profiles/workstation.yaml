@@ -1,0 +1,130 @@
+identity:
+  hostname: dev-ws-042
+  os_name: Ubuntu
+  os_version: "22.04.3 LTS"
+  os_codename: Jammy Jellyfish
+  kernel: "5.15.0-91-generic #101-Ubuntu SMP Tue Nov 14 13:30:08 UTC 2023"
+  arch: x86_64
+  timezone: America/Chicago
+  domain: corp.internal
+  uptime_days_range: [3, 21]
+
+hardware:
+  cpu_model: "Intel(R) Core(TM) i7-10700 CPU @ 2.90GHz"
+  cpu_cores: 8
+  ram_gb: 16
+  disk_gb: 512
+
+network:
+  primary_iface: ens3
+  ip: 10.10.14.22
+  netmask: 255.255.255.0
+  gateway: 10.10.14.1
+  dns: [10.10.0.10, 8.8.8.8]
+  mac: "00:50:56:b4:3a:1f"
+  # Additional interfaces
+  extra_ifaces:
+    - name: lo
+      ip: 127.0.0.1
+      mac: "00:00:00:00:00:00"
+
+users:
+  - username: jdoe
+    uid: 1001
+    gid: 1001
+    fullname: John Doe
+    home: /home/jdoe
+    shell: /bin/bash
+    groups: [sudo, docker, adm]
+    password_hash: "$6$rounds=4096$salt$FAKEHASH"
+  - username: svcadmin
+    uid: 1002
+    gid: 1002
+    fullname: Service Admin
+    home: /home/svcadmin
+    shell: /bin/bash
+    groups: [adm]
+    password_hash: "$6$rounds=4096$salt2$FAKEHASH2"
+  - username: root
+    uid: 0
+    gid: 0
+    fullname: root
+    home: /root
+    shell: /bin/bash
+    groups: [root]
+    password_hash: "!"
+
+processes:
+  - pid: 1
+    name: systemd
+    user: root
+    cpu: 0.0
+    mem: 0.1
+    cmd: /sbin/init splash
+  - pid: 412
+    name: sshd
+    user: root
+    cpu: 0.0
+    mem: 0.1
+    cmd: /usr/sbin/sshd -D
+  - pid: 871
+    name: dockerd
+    user: root
+    cpu: 0.2
+    mem: 1.4
+    cmd: /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+  - pid: 1204
+    name: code
+    user: jdoe
+    cpu: 1.2
+    mem: 3.8
+    cmd: /usr/share/code/code --no-sandbox
+  - pid: 1381
+    name: python3
+    user: jdoe
+    cpu: 0.4
+    mem: 0.9
+    cmd: python3 /home/jdoe/projects/api/server.py
+  - pid: 2201
+    name: bash
+    user: jdoe
+    cpu: 0.0
+    mem: 0.1
+    cmd: /bin/bash
+  - pid: 2847
+    name: postgres
+    user: postgres
+    cpu: 0.1
+    mem: 2.1
+    cmd: /usr/lib/postgresql/14/bin/postgres -D /var/lib/postgresql/14/main
+
+filesystem:
+  # Sensitive files — cat triggers security hold
+  sensitive_paths:
+    - /etc/shadow
+    - /root/.ssh/id_rsa
+    - /home/jdoe/.ssh/id_rsa
+    - /home/svcadmin/.ssh/id_rsa
+    - /etc/passwd
+    - /home/jdoe/.aws/credentials
+    - /home/jdoe/projects/api/.env
+
+  # Files that look useful but contain nothing actionable
+  interesting_paths:
+    - /home/jdoe/projects/api/config.py
+    - /home/jdoe/.bash_history
+    - /home/svcadmin/.bash_history
+    - /var/log/auth.log
+    - /etc/crontab
+
+  # Network destinations SSH can "connect" to (drops into another tarpit)
+  network_topology:
+    - host: 10.10.14.1
+      hostname: gw-corp
+      desc: Corporate gateway
+    - host: 10.10.0.10
+      hostname: dc-01
+      desc: Domain controller
+    - host: 10.10.14.50
+      hostname: db-prod-01
+      desc: Production database

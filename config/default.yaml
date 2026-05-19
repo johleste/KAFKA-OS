@@ -1,0 +1,44 @@
+profile: workstation
+
+bureaucracy:
+  friction_level: 3              # 1=believable lag  5=pure hell
+  base_msg_delay_ms: 200
+  base_input_delay_ms: 400
+  base_check_short_ms: 800
+  base_check_medium_ms: 1300
+  base_check_long_ms: 2000
+  base_forwarding_delay_ms: 750
+  random_failure_chance: 0.05
+  high_friction_threshold: 5
+  sudo_success_chance: 0.0
+  download_stall_at: 0.94        # progress bars die here
+  compile_fail_at: 0.97          # builds fail here
+  max_verification_cycles: 3
+  session_timeout_seconds: 3600  # kick after 1 hour idle
+
+endpoints:
+  ssh:
+    enabled: true
+    port: 22
+    banner: "OpenSSH_8.9p1 Ubuntu-3ubuntu0.6, OpenSSL 3.0.2 15 Mar 2022"
+  http:
+    enabled: false
+    port: 8080
+  ftp:
+    enabled: false
+    port: 21
+  mysql:
+    enabled: false
+    port: 3306
+
+operator:
+  # SSH key auth → real shell. Password auth → tarpit always.
+  authorized_keys_file: ~/.ssh/kafka_operator_authorized_keys
+  # Local console magic string (typed as password at login prompt)
+  console_magic: ""              # leave empty to disable console bypass
+  real_shell: /bin/bash
+
+logging:
+  session_dir: /var/log/kafka-os/sessions
+  intelligence_log: /var/log/kafka-os/intelligence.jsonl
+  level: info                    # debug | info | warn

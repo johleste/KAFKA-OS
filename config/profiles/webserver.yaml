@@ -1,0 +1,112 @@
+identity:
+  hostname: web-prod-03
+  os_name: Ubuntu
+  os_version: "20.04.6 LTS"
+  os_codename: Focal Fossa
+  kernel: "5.4.0-169-generic #187-Ubuntu SMP Thu Feb 8 19:18:25 UTC 2024"
+  arch: x86_64
+  timezone: UTC
+  domain: prod.internal
+  uptime_days_range: [45, 120]
+
+hardware:
+  cpu_model: "Intel(R) Xeon(R) Silver 4214R CPU @ 2.40GHz"
+  cpu_cores: 24
+  ram_gb: 32
+  disk_gb: 1024
+
+network:
+  primary_iface: eth0
+  ip: 10.20.1.11
+  netmask: 255.255.255.0
+  gateway: 10.20.1.1
+  dns: [10.20.0.5, 8.8.8.8]
+  mac: "00:50:56:a3:12:fe"
+  extra_ifaces:
+    - name: lo
+      ip: 127.0.0.1
+      mac: "00:00:00:00:00:00"
+
+users:
+  - username: www-data
+    uid: 33
+    gid: 33
+    fullname: www-data
+    home: /var/www
+    shell: /usr/sbin/nologin
+    groups: [www-data]
+    password_hash: "!"
+  - username: deploy
+    uid: 1001
+    gid: 1001
+    fullname: Deploy User
+    home: /home/deploy
+    shell: /bin/bash
+    groups: [sudo, www-data]
+    password_hash: "$6$rounds=4096$salt$FAKEHASH"
+  - username: root
+    uid: 0
+    gid: 0
+    fullname: root
+    home: /root
+    shell: /bin/bash
+    groups: [root]
+    password_hash: "!"
+
+processes:
+  - pid: 1
+    name: systemd
+    user: root
+    cpu: 0.0
+    mem: 0.1
+    cmd: /sbin/init
+  - pid: 398
+    name: nginx
+    user: root
+    cpu: 0.0
+    mem: 0.3
+    cmd: "nginx: master process /usr/sbin/nginx -g daemon off;"
+  - pid: 399
+    name: nginx
+    user: www-data
+    cpu: 0.3
+    mem: 0.2
+    cmd: "nginx: worker process"
+  - pid: 511
+    name: sshd
+    user: root
+    cpu: 0.0
+    mem: 0.1
+    cmd: /usr/sbin/sshd -D
+  - pid: 812
+    name: php-fpm8.1
+    user: www-data
+    cpu: 0.8
+    mem: 2.4
+    cmd: "php-fpm: pool www"
+
+filesystem:
+  sensitive_paths:
+    - /etc/shadow
+    - /root/.ssh/id_rsa
+    - /home/deploy/.ssh/id_rsa
+    - /var/www/html/.env
+    - /etc/nginx/nginx.conf
+    - /var/www/html/wp-config.php
+
+  interesting_paths:
+    - /var/log/nginx/access.log
+    - /var/log/nginx/error.log
+    - /home/deploy/.bash_history
+    - /etc/crontab
+
+  network_topology:
+    - host: 10.20.1.1
+      hostname: lb-01
+      desc: Load balancer
+    - host: 10.20.1.20
+      hostname: db-prod-01
+      desc: MySQL production
+    - host: 10.20.1.30
+      hostname: cache-01
+      desc: Redis cache
