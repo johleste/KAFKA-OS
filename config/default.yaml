@@ -38,6 +38,15 @@ operator:
   console_magic: ""              # leave empty to disable console bypass
   real_shell: /bin/bash
 
+download_behavior:
+  default: fake_install          # fallback for unrecognized tools
+  categories:
+    recon: fake_execute          # produce convincing fake findings
+    exploit: fake_install        # appears installed, fails on use
+    lateral: fake_install
+    persistence: fake_install
+    exfil: stall                 # always blocked at 94%
+
 logging:
   session_dir: /var/log/kafka-os/sessions
   intelligence_log: /var/log/kafka-os/intelligence.jsonl

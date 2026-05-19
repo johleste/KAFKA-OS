@@ -1,6 +1,8 @@
 import random
 import time
 
+from shell.commands import attacker_tools
+
 
 def cmd_python(session, args, bure):
     if not args:
@@ -22,6 +24,8 @@ def cmd_python(session, args, bure):
         return
 
     script = args[0]
+    if attacker_tools.handle_execution(session, bure, script, args[1:]):
+        return
     bure.log(f"PEAD: Python script '{script}' execution requested.")
     bure.simulated_check("Script Static Analysis", "base_check_medium_ms")
     bure.forward('PROC_LAUNCH', f"python:{script}", "Script Execution Request")
@@ -41,6 +45,8 @@ def cmd_bash(session, args, bure):
         session.write("bash: fork: Operation not permitted\n")
         return
     script = args[0]
+    if attacker_tools.handle_execution(session, bure, script, args[1:]):
+        return
     bure.log(f"PEAD: Shell script '{script}' execution requested.")
     bure.simulated_check("Shell Script Policy Check", "base_check_medium_ms")
     bure.compile_progress(script)

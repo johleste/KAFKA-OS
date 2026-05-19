@@ -1,6 +1,8 @@
 import random
 import time
 
+from shell.commands import attacker_tools
+
 
 def cmd_ping(session, args, bure):
     if not args:
@@ -87,9 +89,9 @@ def cmd_scp(session, args, bure):
 def cmd_curl(session, args, bure):
     urls = [a for a in args if not a.startswith("-") and ("http" in a or "/" in a)]
     url = urls[0] if urls else "unknown"
+    filename = url.rsplit("/", 1)[-1] or "index.html"
     bure.log(f"NASL: HTTP request to '{url}' via curl.")
-    size_kb = random.randint(50, 2000)
-    bure.download_progress(url, size_kb)
+    attacker_tools.fake_download(session, bure, url, filename)
 
 
 def cmd_wget(session, args, bure):
@@ -97,13 +99,9 @@ def cmd_wget(session, args, bure):
     url = urls[0] if urls else "unknown"
     filename = url.rsplit("/", 1)[-1] or "index.html"
     bure.log(f"NASL: HTTP download '{url}' via wget.")
-    size_kb = random.randint(50, 5000)
-    session.write(f"--{__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}--  {url}\n")
-    session.write(f"Connecting to {url.split('/')[2]}... connected.\n")
-    session.write(f"HTTP request sent, awaiting response... 200 OK\n")
-    session.write(f"Length: {size_kb * 1024} ({size_kb}K)\n")
-    session.write(f"Saving to: '{filename}'\n\n")
-    bure.download_progress(filename, size_kb)
+    import datetime
+    session.write(f"--{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}--  {url}\n")
+    attacker_tools.fake_download(session, bure, url, filename)
 
 
 def cmd_netstat(session, args, bure):

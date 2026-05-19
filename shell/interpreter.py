@@ -2,7 +2,7 @@ import os
 import shlex
 
 from shell.bureaucracy.engine import BureaucracyEngine
-from shell.commands import filesystem, system, auth, network, execution, editors, hardware, packages
+from shell.commands import filesystem, system, auth, network, execution, editors, hardware, packages, attacker_tools
 
 
 class Session:
@@ -30,6 +30,7 @@ class Session:
         # Package/service state — persists within the session
         self.installed_packages = {}   # name -> {version, bin_path}
         self.services = {}             # name -> "active"|"inactive"|"enabled"
+        self.downloaded_tools = {}     # filename -> registry entry
 
     def write(self, text, end=""):
         self._write(text)
@@ -249,6 +250,8 @@ def run_shell(session: Session, bure: BureaucracyEngine):
             except Exception as e:
                 session.write(f"bash: {cmd_name}: unexpected error\n")
                 bure.log(f"Internal error in '{cmd_name}': {e}", level="DEBUG")
+        elif attacker_tools.handle_execution(session, bure, cmd_name, args):
+            pass  # tool handled
         else:
             # Unknown command — bureaucratic rejection
             bure.circular_rejection(session, cmd_name)
